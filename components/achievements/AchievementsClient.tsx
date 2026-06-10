@@ -4,8 +4,10 @@ import { useState } from 'react'
 import { Achievement } from '@/lib/types/database.types'
 import { ACHIEVEMENTS_CATALOG } from '@/lib/utils/achievements'
 
-interface Props { achievements: Achievement[] }
-
+interface Props {
+  achievements: any[]
+  hero?: any
+}
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat('es-AR', {
     timeZone: 'America/Argentina/Buenos_Aires',

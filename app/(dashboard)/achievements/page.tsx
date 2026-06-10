@@ -18,5 +18,6 @@ export default async function AchievementsPage() {
     .eq('user_id', user.id)
     .single()
 
+
   return <AchievementsClient achievements={achievements ?? []} hero={hero} />
 }
