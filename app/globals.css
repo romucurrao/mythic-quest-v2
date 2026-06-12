@@ -472,3 +472,45 @@ h1, h2, h3, h4         { font-family: 'Cinzel', serif; letter-spacing: 1px; }
 }
 .corner-ornament::before { top: 8px; left: 12px; }
 .corner-ornament::after  { top: 8px; right: 12px; }
+
+/* ═══════════════════════════════════════════════
+   TAB BUTTONS (filtro de áreas en misiones)
+═══════════════════════════════════════════════ */
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.03);
+  color: var(--text-secondary);
+  font-family: 'Cinzel', serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.tab-btn:hover { border-color: rgba(212,175,55,0.35); color: var(--text-gold); background: rgba(212,175,55,0.05); }
+.tab-btn.active { background: rgba(212,175,55,0.14); border-color: var(--gold); color: var(--gold-bright); }
+
+/* ═══════════════════════════════════════════════
+   QUEST CARD (fila de misión)
+═══════════════════════════════════════════════ */
+.quest-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: rgba(13,19,43,0.6);
+  border: 1px solid rgba(255,255,255,0.07);
+  transition: var(--transition);
+}
+.quest-card:hover { border-color: rgba(212,175,55,0.25); background: rgba(13,19,43,0.75); }
+.quest-card.done  { opacity: 0.65; background: rgba(0,230,118,0.03); border-color: rgba(0,230,118,0.15); }
+
+/* ═══════════════════════════════════════════════
+   DATE INPUT — tema oscuro
+═══════════════════════════════════════════════ */
+input[type="date"].input-parch {
+  color-scheme: dark;
+}
