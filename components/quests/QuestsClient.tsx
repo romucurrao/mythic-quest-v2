@@ -21,8 +21,9 @@ interface Props {
 const EMPTY_FORM = {
   name: '', description: '', area_id: '', difficulty: 'media',
   recurrence_type: 'daily', recurrence_days: [] as number[],
-  start_date: '', end_date: '',
+  start_date: '', end_date: '', priority: 'medium',
 }
+
 
 const DAYS = [
   { label: 'D', full: 'Domingo',   val: 0 },
@@ -42,6 +43,12 @@ const RECURRENCE_OPTIONS = [
 ]
 
 const DIFFICULTY_OPTIONS = ['facil','media','dificil','epica']
+
+const PRIORITY_OPTIONS = [
+  { key: 'low',    label: 'Ascua menor',      emoji: '🕯️',  color: '#7ec8e3' },
+  { key: 'medium', label: 'Llama sagrada',    emoji: '🔥',  color: '#d4af37' },
+  { key: 'high',   label: 'Fuego del Olimpo', emoji: '⚡',  color: '#ff6b35' },
+]
 
 export default function QuestsClient({ quests: init, hero, areas, todayCompletions: initCompletions, userId, today }: Props) {
   const router = useRouter()
@@ -82,6 +89,7 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
       difficulty: q.difficulty, recurrence_type: q.recurrence_type ?? 'daily',
       recurrence_days: (q.recurrence_days as number[]) ?? [],
       start_date: q.start_date ?? today, end_date: q.end_date ?? '',
+      priority: (q as Quest & { priority?: string }).priority ?? 'medium',
     })
     setSaveErr('')
     setShowModal(true)
@@ -123,6 +131,7 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
       xp_reward: xp,
       gold_reward: gold,
       attribute_bonus: attrBonus,
+      priority: form.priority ?? 'medium',
     }
 
     try {
@@ -202,11 +211,20 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
     setCompleting(null)
   }
 
-  // ── Filtrar misiones ──
-  const todayQuests = quests.filter(q => questAppearsOnDate(q, today))
+  // ── Filtrar y ordenar misiones ──
+  const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 }
+  function sortByPriority(arr: Quest[]) {
+    return [...arr].sort((a, b) => {
+      const pa = (a as Quest & { priority?: string }).priority ?? 'medium'
+      const pb = (b as Quest & { priority?: string }).priority ?? 'medium'
+      return (PRIORITY_RANK[pa] ?? 1) - (PRIORITY_RANK[pb] ?? 1)
+    })
+  }
+
+  const todayQuests  = quests.filter(q => questAppearsOnDate(q, today))
   const todayDoneIds = new Set(completions.map(c => c.quest_id))
 
-  const pending   = todayQuests.filter(q => !todayDoneIds.has(q.id) && !q.is_completed)
+  const pending   = sortByPriority(todayQuests.filter(q => !todayDoneIds.has(q.id) && !q.is_completed))
   const doneToday = todayQuests.filter(q => todayDoneIds.has(q.id))
 
   const filteredAll = activeArea === 'all' ? quests
@@ -247,6 +265,17 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '6px' }}>
+            {/* Priority badge — solo si es alta */}
+            {(() => {
+              const p = (quest as Quest & { priority?: string }).priority ?? 'medium'
+              const po = PRIORITY_OPTIONS.find(x => x.key === p)
+              if (p === 'high') return (
+                <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(255,107,53,0.15)', border: '1px solid rgba(255,107,53,0.4)', color: '#ff6b35', fontFamily: 'Cinzel, serif', letterSpacing: '0.04em' }}>
+                  {po?.emoji} {po?.label}
+                </span>
+              )
+              return null
+            })()}
             <span style={{ fontWeight: 600, fontSize: '1.05rem', color: done ? 'var(--text-secondary)' : 'var(--text-primary)', textDecoration: done ? 'line-through' : 'none' }}>
               {quest.name}
             </span>
@@ -426,7 +455,29 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
               </div>
             </div>
 
-            {/* Recurrencia */}
+            {/* ── Fuego del Olimpo (prioridad) ── */}
+            <div className="form-group" style={{ marginTop: '20px' }}>
+              <label>⚡ Fuego del Olimpo <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.75rem' }}>(prioridad)</span></label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                {PRIORITY_OPTIONS.map(p => (
+                  <button key={p.key} type="button"
+                    onClick={() => setForm(f => ({ ...f, priority: p.key }))}
+                    style={{
+                      padding: '10px 8px', borderRadius: '8px', cursor: 'pointer', textAlign: 'center',
+                      fontFamily: 'Cinzel, serif', fontSize: '0.75rem', letterSpacing: '0.04em', transition: 'var(--transition)',
+                      background: form.priority === p.key ? `${p.color}20` : 'rgba(255,255,255,0.02)',
+                      border: `2px solid ${form.priority === p.key ? p.color : 'rgba(255,255,255,0.08)'}`,
+                      color: form.priority === p.key ? p.color : 'var(--text-secondary)',
+                    }}
+                  >
+                    <div style={{ fontSize: '1.3rem', marginBottom: '4px' }}>{p.emoji}</div>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+
             <div className="form-group" style={{ marginTop: '20px' }}>
               <label>Frecuencia</label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>

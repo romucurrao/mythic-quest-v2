@@ -108,6 +108,7 @@ export interface Database {
           end_date: string | null
           recurrence_type: string
           recurrence_days: number[]
+          priority: string
           created_at: string
         }
         Insert: {
@@ -127,6 +128,7 @@ export interface Database {
           end_date?: string | null
           recurrence_type?: string
           recurrence_days?: number[]
+          priority?: string
         }
         Update: {
           id?: string; user_id?: string; name?: string; description?: string | null
@@ -134,7 +136,7 @@ export interface Database {
           last_reset_date?: string | null; xp_reward?: number; gold_reward?: number
           attribute_bonus?: string | null; area_id?: string | null; start_date?: string | null
           end_date?: string | null; recurrence_type?: string; recurrence_days?: number[]
-          created_at?: string
+          priority?: string; created_at?: string
         }
       }
       mission_completions: {
