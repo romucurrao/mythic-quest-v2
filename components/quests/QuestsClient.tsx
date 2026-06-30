@@ -54,16 +54,18 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
   const router = useRouter()
   const sb = createClient()
 
-  const [quests, setQuests]         = useState<Quest[]>(init)
-  const [completions, setCompletions] = useState<MissionCompletion[]>(initCompletions)
-  const [showModal, setShowModal]   = useState(false)
-  const [editing, setEditing]       = useState<Quest | null>(null)
-  const [form, setForm]             = useState(EMPTY_FORM)
-  const [saving, setSaving]         = useState(false)
-  const [saveErr, setSaveErr]       = useState('')
-  const [activeArea, setActiveArea] = useState<string>('today') // 'today' | 'all' | area.id
-  const [toast, setToast]           = useState('')
-  const [completing, setCompleting] = useState<string | null>(null)
+  const [quests, setQuests]             = useState<Quest[]>(init)
+  const [completions, setCompletions]   = useState<MissionCompletion[]>(initCompletions)
+  const [showModal, setShowModal]       = useState(false)
+  const [editing, setEditing]           = useState<Quest | null>(null)
+  const [form, setForm]                 = useState(EMPTY_FORM)
+  const [saving, setSaving]             = useState(false)
+  const [saveErr, setSaveErr]           = useState('')
+  const [activeArea, setActiveArea]     = useState<string>('today') // 'today' | 'all' | 'unica' | area.id
+  const [toast, setToast]               = useState('')
+  const [completing, setCompleting]     = useState<string | null>(null)
+  const [undoing, setUndoing]           = useState<string | null>(null)
+  const [hoveredDone, setHoveredDone]   = useState<string | null>(null)
 
   const closeModal = useCallback(() => { setShowModal(false); setSaveErr(''); setSaving(false); setEditing(null) }, [])
 
@@ -211,6 +213,53 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
     setCompleting(null)
   }
 
+  async function uncompleteQuest(quest: Quest) {
+    if (!hero) return
+    const completion = completions.find(c => c.quest_id === quest.id && c.completed_date === today)
+    if (!completion) return
+    setUndoing(quest.id)
+
+    try {
+      // Revertir XP y oro
+      const revertXp   = Math.max(0, hero.xp   - (completion.xp_earned ?? quest.xp_reward))
+      const revertGold = Math.max(0, hero.gold  - (completion.gold_earned ?? quest.gold_reward))
+      const revertLvl  = calculateLevel(revertXp)
+      const revertTotal = Math.max(0, hero.total_quests_completed - 1)
+
+      // Revertir atributo
+      const ak = quest.attribute_bonus as keyof Pick<Hero,'strength'|'wisdom'|'discipline'|'charisma'|'creativity'>|null
+      const attrU: Partial<Hero> = {}
+      if (ak && ['strength','wisdom','discipline','charisma','creativity'].includes(ak)) {
+        attrU[ak] = Math.max(0, (hero[ak] as number) - 1)
+      }
+
+      await sb.from('heroes').update({
+        xp: revertXp, gold: revertGold, level: revertLvl,
+        total_quests_completed: revertTotal, ...attrU,
+      } as never).eq('user_id', userId)
+
+      // Borrar mission_completions
+      await sb.from('mission_completions').delete()
+        .eq('user_id', userId)
+        .eq('quest_id', quest.id)
+        .eq('completed_date', today)
+
+      setCompletions(p => p.filter(c => !(c.quest_id === quest.id && c.completed_date === today)))
+
+      // Si era misión única, revertir is_completed
+      if (quest.recurrence_type === 'none' || quest.frequency === 'unica') {
+        await sb.from('quests').update({ is_completed: false } as never).eq('id', quest.id)
+        setQuests(p => p.map(q => q.id === quest.id ? { ...q, is_completed: false } : q))
+      }
+
+      showToast(`↩️ Misión desmarcada — se revirtieron ${completion.xp_earned ?? quest.xp_reward} XP`)
+      router.refresh()
+    } catch {
+      showToast('❌ Error al deshacer')
+    }
+    setUndoing(null)
+  }
+
   // ── Filtrar y ordenar misiones ──
   const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 }
   function sortByPriority(arr: Quest[]) {
@@ -227,8 +276,14 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
   const pending   = sortByPriority(todayQuests.filter(q => !todayDoneIds.has(q.id) && !q.is_completed))
   const doneToday = todayQuests.filter(q => todayDoneIds.has(q.id))
 
-  const filteredAll = activeArea === 'all' ? quests
-    : activeArea === 'today' ? todayQuests
+  // Misiones de una sola vez (sin recurrencia)
+  const unicaQuests = quests.filter(q =>
+    q.recurrence_type === 'none' || q.frequency === 'unica' || (!q.recurrence_type && !q.frequency)
+  )
+
+  const filteredAll = activeArea === 'all'   ? quests
+    : activeArea === 'today'  ? todayQuests
+    : activeArea === 'unica'  ? unicaQuests
     : quests.filter(q => q.area_id === activeArea)
 
   function getAreaName(areaId: string | null) {
@@ -241,26 +296,54 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
   }
 
   function QuestRow({ quest }: { quest: Quest }) {
-    const done = todayDoneIds.has(quest.id) || quest.is_completed
+    const doneByCompletion = todayDoneIds.has(quest.id)
+    const doneByFlag       = quest.is_completed && !doneByCompletion
+    const done             = doneByCompletion || doneByFlag
+    // Solo se puede deshacer si fue completada hoy (está en mission_completions)
+    const canUndo          = doneByCompletion
+    const isHovered        = hoveredDone === quest.id
+    const isUndoing        = undoing === quest.id
+    const isCompleting     = completing === quest.id
+
+    function handleCheckClick() {
+      if (isCompleting || isUndoing) return
+      if (canUndo) { uncompleteQuest(quest) }
+      else if (!done) { completeQuest(quest) }
+    }
+
     return (
       <div className={`quest-card${done ? ' done' : ''}`}>
-        {/* Checkbox GRANDE */}
+        {/* Botón check — con soporte de deshacer */}
         <button
-          onClick={() => !done && completeQuest(quest)}
-          disabled={done || completing === quest.id}
+          onClick={handleCheckClick}
+          disabled={isCompleting || isUndoing || (done && !canUndo)}
+          title={canUndo ? 'Clic para deshacer' : done ? 'Completada' : 'Marcar como completada'}
           style={{
             width: '52px', height: '52px', borderRadius: '50%', flexShrink: 0,
-            border: `3px solid ${done ? 'var(--success)' : 'var(--gold)'}`,
-            background: done ? 'var(--success)' : 'var(--bg-deep)',
+            border: `3px solid ${
+              isUndoing ? 'var(--gold)'
+              : done    ? (isHovered && canUndo ? '#ff9800' : 'var(--success)')
+              :            'var(--gold)'
+            }`,
+            background: isUndoing ? 'rgba(212,175,55,0.2)'
+              : done    ? (isHovered && canUndo ? 'rgba(255,152,0,0.15)' : 'var(--success)')
+              :            'var(--bg-deep)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: done ? 'default' : 'pointer', color: done ? 'var(--bg-dark)' : 'transparent',
-            fontWeight: 'bold', fontSize: '1.3rem', transition: 'var(--transition)',
-            boxShadow: done ? '0 0 14px rgba(0,230,118,0.4)' : '0 0 8px rgba(212,175,55,0.2)',
+            cursor: done && !canUndo ? 'default' : 'pointer',
+            color: done && !isHovered ? 'var(--bg-dark)' : 'transparent',
+            fontWeight: 'bold', fontSize: isHovered && canUndo ? '1.5rem' : '1.3rem',
+            transition: 'var(--transition)',
+            boxShadow: done
+              ? (isHovered && canUndo ? '0 0 18px rgba(255,152,0,0.4)' : '0 0 14px rgba(0,230,118,0.4)')
+              : '0 0 8px rgba(212,175,55,0.2)',
           }}
-          onMouseEnter={e => { if (!done) (e.currentTarget).style.boxShadow = '0 0 20px rgba(212,175,55,0.5)' }}
-          onMouseLeave={e => { if (!done) (e.currentTarget).style.boxShadow = '0 0 8px rgba(212,175,55,0.2)' }}
+          onMouseEnter={() => { if (canUndo) setHoveredDone(quest.id) }}
+          onMouseLeave={() => setHoveredDone(null)}
         >
-          {completing === quest.id ? '⏳' : done ? '✓' : ''}
+          {isCompleting || isUndoing ? '⏳'
+            : done && isHovered && canUndo ? '↩'
+            : done ? '✓'
+            : ''}
         </button>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -349,6 +432,9 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
         <button onClick={() => setActiveArea('all')} className={`tab-btn${activeArea === 'all' ? ' active' : ''}`}>
           📋 Todas ({quests.length})
         </button>
+        <button onClick={() => setActiveArea('unica')} className={`tab-btn${activeArea === 'unica' ? ' active' : ''}`}>
+          🏆 Una vez ({unicaQuests.length})
+        </button>
         {areas.map(a => (
           <button key={a.id} onClick={() => setActiveArea(a.id)} className={`tab-btn${activeArea === a.id ? ' active' : ''}`}>
             {a.icon} {a.name}
@@ -374,8 +460,13 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
           {/* Completadas hoy */}
           {doneToday.length > 0 && (
             <div>
-              <div style={{ fontFamily: 'Cinzel, serif', fontSize: '0.78rem', color: 'var(--success)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px' }}>
-                ✓ Completadas hoy ({doneToday.length})
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'Cinzel, serif', fontSize: '0.78rem', color: 'var(--success)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  ✓ Completadas hoy ({doneToday.length})
+                </span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  ↩ Pasá el cursor sobre ✓ para deshacer
+                </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {doneToday.map(q => <QuestRow key={q.id} quest={q} />)}
