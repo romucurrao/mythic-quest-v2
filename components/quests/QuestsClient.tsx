@@ -281,10 +281,25 @@ export default function QuestsClient({ quests: init, hero, areas, todayCompletio
     q.recurrence_type === 'none' || q.frequency === 'unica' || (!q.recurrence_type && !q.frequency)
   )
 
-  const filteredAll = activeArea === 'all'   ? quests
+  // Base sin ordenar según pestaña activa
+  const baseFiltered = activeArea === 'all'   ? quests
     : activeArea === 'today'  ? todayQuests
     : activeArea === 'unica'  ? unicaQuests
     : quests.filter(q => q.area_id === activeArea)
+
+  // Función que determina si una misión está "terminada" (para mandarla al fondo)
+  function isQuestDone(q: Quest) {
+    return todayDoneIds.has(q.id) || q.is_completed
+  }
+
+  // Ordenar: pendientes primero (por prioridad) → completadas al fondo
+  function sortQuestList(arr: Quest[]) {
+    const pending_   = sortByPriority(arr.filter(q => !isQuestDone(q)))
+    const completed_ = arr.filter(q => isQuestDone(q))
+    return [...pending_, ...completed_]
+  }
+
+  const filteredAll = sortQuestList(baseFiltered)
 
   function getAreaName(areaId: string | null) {
     if (!areaId) return null
